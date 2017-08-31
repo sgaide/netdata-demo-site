@@ -8,6 +8,10 @@ DYNAMIC_NODE_ROUTER_PRIORITY="0"
 STATIC_NODE_CONNECT="always"
 DYNAMIC_NODE_CONNECT="ondemand"
 
+realpath() {
+    [[ $1 = /* ]] && echo "$1" || echo "$PWD/${1#./}"
+}
+
 ME="$(realpath ${0})"
 NULL=
 
@@ -149,9 +153,12 @@ declare -A gvpe_ifname=()
 declare -A gvpe_ifupdata=()
 declare -A gvpe_connect=()
 declare -A gvpe_router_priority=()
+declare -A gvpe_ssh_username=()
+declare -A gvpe_ssh_keyfile=()
+declare -A gvpe_ssh_port=()
 
 node() {
-    local name="${1// /}" p="${2// /}" vip="${3// /}" os="${4// /}" sip="${5// /}"
+    local name="${1// /}" p="${2// /}" vip="${3// /}" os="${4// /}" sip="${5// /}" ssh_port="${6// /}" ssh_username="${7// /}" ssh_keyfile="${8// /}"
     local pip port ifname ifupdata connect router_priority
 
     pip=$(echo "${p}"  | cut -d ':' -f 1)
@@ -164,6 +171,10 @@ node() {
 
         freebsd)
             ifname="tap0"
+            ;;
+
+        macos)
+            ifname="/dev/tap0"
             ;;
 
         *)
@@ -239,6 +250,9 @@ node() {
     gvpe_ifupdata[${name}]="${ifupdata}"
     gvpe_connect[${name}]="${connect}"
     gvpe_router_priority[${name}]="${router_priority}"
+    gvpe_ssh_username[${name}]="${ssh_username}"
+    gvpe_ssh_keyfile[${name}]="${ssh_keyfile}"
+    gvpe_ssh_port[${name}]="${ssh_port}"
 }
 
 foreach_node() {
@@ -312,12 +326,32 @@ EOF
 
 node_keys() {
     local name="${1}"
+    local os os_ext
 
     if [ ! -f "keys/${name}" -o ! -f "keys/${name}.privkey" ]
     then
+        os="$(uname -s)"
+        case "${os}" in
+            Linux)
+                os_ext="linux"
+                ;;
+
+            FreeBSD)
+                os_ext="freebsd"
+                ;;
+
+            Darwin)
+                os_ext="macos"
+                ;;
+
+            *)
+                echo >&2 "Unknown O/S '${os}'"
+                exit 1
+                ;;
+        esac
         echo >&2 "generating keys for: ${name}"
         cd keys
-        run ../sbin.linux/gvpectrl -c ../conf.d -g ${name}
+        run ../sbin.${os_ext}/gvpectrl -c ../conf.d -g ${name}
         cd ..
     fi
 
@@ -362,9 +396,9 @@ node_provision_files() {
             run sudo rsync -HaSPv sbin.${gvpe_os[${name}]}/ /usr/local/sbin/
             run sudo rsync -HaSPv ${confd}/ /etc/gvpe/
         else
-            run rsync -HaSPv sbin/ -e "ssh" --rsync-path="\`which sudo\` rsync" ${gvpe_sip[${name}]}:/usr/local/sbin/
-            run rsync -HaSPv sbin.${gvpe_os[${name}]}/ -e "ssh" --rsync-path="\`which sudo\` rsync" ${gvpe_sip[${name}]}:/usr/local/sbin/
-            run rsync -HaSPv ${confd}/ -e "ssh" --rsync-path="\`which sudo\` rsync" ${gvpe_sip[${name}]}:/etc/gvpe/
+            run rsync -HaSPv sbin/ -e "ssh -p ${gvpe_ssh_port[${name}]} -l ${gvpe_ssh_username[${name}]} -i ${gvpe_ssh_keyfile[${name}]}" --rsync-path="\`which sudo\` rsync" ${gvpe_sip[${name}]}:/usr/local/sbin/
+            run rsync -HaSPv sbin.${gvpe_os[${name}]}/ -e "ssh -p ${gvpe_ssh_port[${name}]} -l ${gvpe_ssh_username[${name}]} -i ${gvpe_ssh_keyfile[${name}]}" --rsync-path="\`which sudo\` rsync" ${gvpe_sip[${name}]}:/usr/local/sbin/
+            run rsync -HaSPv ${confd}/ -e "ssh -p ${gvpe_ssh_port[${name}]} -l ${gvpe_ssh_username[${name}]} -i ${gvpe_ssh_keyfile[${name}]}" --rsync-path="\`which sudo\` rsync" ${gvpe_sip[${name}]}:/etc/gvpe/
         fi
     fi
 
@@ -384,10 +418,10 @@ node_setup() {
         if [ "${gvpe_sip[${name}]}" = "localhost" ]
             then
             # it will sudo by itself if needed
-            run /etc/gvpe/setup.sh /etc/gvpe || failed=1
+            run /etc/gvpe/setup.sh /etc/gvpe ${name} || failed=1
         else
             # it will sudo by itself if needed
-            run ssh "${gvpe_sip[${name}]}" "/etc/gvpe/setup.sh /etc/gvpe" || failed=1
+            run ssh -p ${gvpe_ssh_port[${name}]} -l ${gvpe_ssh_username[${name}]} -i ${gvpe_ssh_keyfile[${name}]} "${gvpe_sip[${name}]}" "/etc/gvpe/setup.sh /etc/gvpe ${name}" || failed=1
         fi
     fi
 }

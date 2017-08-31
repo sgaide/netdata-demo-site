@@ -2,6 +2,8 @@
 
 brew install openssl || exit 1
 brew install cvs || exit 1
+brew install autoconf || exit 1
+brew install automake || exit 1
 
 [ -f gpve.old ] && rm -rf gvpe.old
 [ -f gpve ] && mv -f gvpe gvpe.old

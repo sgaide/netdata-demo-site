@@ -15,6 +15,7 @@ run() {
 }
 
 CONFBASE=${1-/etc/gvpe}
+NAME=${2}
 
 
 # -----------------------------------------------------------------------------
@@ -119,7 +120,7 @@ chmod 755 ${CONFBASE}/node-changed.local
 
 
 # -----------------------------------------------------------------------------
-# generate the local GVPE node-up script
+# generate the local GVPE node-down script
 
 if [ ! -f ${CONFBASE}/node-down.local ]
     then
@@ -136,18 +137,58 @@ EOF
 fi
 chmod 755 ${CONFBASE}/node-down.local
 
+# -----------------------------------------------------------------------------
+# link launchd plist file if needed
+
+os=$(uname -s)
+if [ ${os} = "Darwin" ]
+    then
+    if [ ! -f ${CONFBASE}/${NAME}.gvpe.plist ]
+        then
+        cat >${CONFBASE}/${NAME}.gvpe.plist <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>KeepAlive</key>
+    <true/>
+    <key>Label</key>
+    <string>${NAME}.gvpe</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/sbin/gvpe</string>
+        <string>-D</string>
+        <string>-l</string>
+        <string>info</string>
+        <string>${NAME}</string>
+        </array>
+</dict>
+</plist>
+EOF
+    fi
+    if [ ! -f /Library/LaunchDaemons/${NAME}.gvpe.plist ]
+        then
+        run ln -s ${CONFBASE}/${NAME}.gvpe.plist /Library/LaunchDaemons/${NAME}.gvpe.plist
+    fi
+fi
 
 # -----------------------------------------------------------------------------
 # start or restart GVPE
 
 failed=0
-if [ -d /etc/systemd/system ]
+if [ ${os} = "Darwin" ]
     then
-    run cp ${CONFBASE}/gvpe.service /etc/systemd/system/ || failed=1
-    [ ${failed} -eq 0 ] && run systemctl daemon-reload || failed=1
-    [ ${failed} -eq 0 ] && run systemctl restart gvpe || failed=1
+    run launchctl unload /Library/LaunchDaemons/${NAME}.gvpe.plist
+    run launchctl load /Library/LaunchDaemons/${NAME}.gvpe.plist || failed=1
 else
-	failed=1
+    if [ -d /etc/systemd/system ]
+        then
+        run cp ${CONFBASE}/gvpe.service /etc/systemd/system/ || failed=1
+        [ ${failed} -eq 0 ] && run systemctl daemon-reload || failed=1
+        [ ${failed} -eq 0 ] && run systemctl restart gvpe || failed=1
+    else
+	    failed=1
+    fi        
 fi
 
 if [ ${failed} -eq 1 ]

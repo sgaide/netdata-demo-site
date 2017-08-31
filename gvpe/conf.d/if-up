@@ -48,11 +48,15 @@ case "${os}" in
 		run ip link set ${IFNAME} address ${MAC} mtu ${MTU} up
 		run ip addr add ${IP} dev ${IFNAME}
 		run ip route replace ${NET} dev ${IFNAME} || \
-			run ip route add ${NET} dev ${IFNAME}
+		run ip route add ${NET} dev ${IFNAME}
 		;;
 
 	FreeBSD)
 		run ifconfig ${IFNAME} inet ${IP}/${NET/*\/} up description "GVPE tunnel"
+		;;
+
+	Darwin)
+		run ifconfig ${IFNAME} ${IP}
 		;;
 
 	*)
