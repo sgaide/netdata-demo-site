@@ -186,9 +186,10 @@ else
         run cp ${CONFBASE}/gvpe.service /etc/systemd/system/ || failed=1
         [ ${failed} -eq 0 ] && run systemctl daemon-reload || failed=1
         [ ${failed} -eq 0 ] && run systemctl restart gvpe || failed=1
+				[ ${failed} -eq 0 ] && run systemctl enable gvpe || failed=1
     else
 	    failed=1
-    fi        
+    fi
 fi
 
 if [ ${failed} -eq 1 ]
